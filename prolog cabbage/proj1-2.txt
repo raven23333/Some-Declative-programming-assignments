@@ -1,0 +1,151 @@
+%hand_value(+Hand, +Startcard, -Value).
+%Calculate the value of a Handful of cards together with startcard.
+%The Hand is expected as a list of four cards and the Start is expected as one card  
+%And the Points will be the total points of a hand.
+hand_value(Hand, Startcard, Value):-number_map([Startcard|Hand],NumbValues)
+    ,ceil_list(NumbValues,CeiledValues),zipList(NumbValues,ZippedValues)
+    ,calcu_15s(CeiledValues,Point15)
+    ,calcu_pairsN(ZippedValues,PointPair)
+    ,calcu_runsN(ZippedValues,PointRun)
+    ,calcu_flushes(Hand,Startcard,PointFlush)
+    ,calcu_nob(Hand,Startcard,PointNob)
+    ,sumlist([Point15,PointPair,PointRun,PointFlush,PointNob],Value).
+
+%Calculate the marks of the 15s
+%calcu_15s(+CeiledValues,-Point15)
+%The CeiledValues is expected as a list of card points that is converted to numbers  
+%and ceiled up to 10. Then the Points will be the twice of 15s. 
+%The findall will record how many times calcu_15dp succeeds, 
+%which is the number of card groups that add up to 15
+calcu_15s(CeiledValues,Point15):-findall(1,calcu_15dp(CeiledValues,15),Results)
+    ,length(Results,SolutionNum),Point15 is SolutionNum*2.
+%succeed if a list has at least one sublist whose sum is target
+%calcu_15dp(+List,+Target)
+%use dynamic programming to implicitly find all the number sublists that add up to 15
+%As only the number of solutions is needed, those solutions is discarded. That code will
+%try to add the first element of List into solution group (or discard it) and test 
+%whether the other elements of Lists can make up the rest of solution.
+calcu_15dp(_,0).
+calcu_15dp([E|L],Target):-NewTarget is Target-E,NewTarget>=0
+    ,(calcu_15dp(L,Target);calcu_15dp(L,NewTarget)).
+
+%Calculate the marks of the pairs
+%calcu_pairs(+Hand,+Start,-Point)
+%The Hand is expected as a list of four cards and the Start is expected as one card  
+%And the Points will be the twice of the pairs.
+calcu_pairsN(ZippedList,Point):-pairs2(ZippedList,Point,0).
+pairs2([],Point,Point).
+pairs2([_-PairNum|ZippedValues],Point,Tmp):-pairs(PairNum,PairMark)
+    ,Tmp1 is PairMark+Tmp,pairs2(ZippedValues,Point,Tmp1).
+
+%Calculate the marks of the runs
+%calcu_runs(+Hand,+Start,-Point)
+%The Hand is expected as a list of four cards and the Start is expected as one card  
+%And the Points will be the length times the number of runs.
+calcu_runsN(ZippedValues,Point):-ZippedValues=[_-PairNum|_]
+    ,succ2(ZippedValues,1,PairNum,0,Point).
+
+%Calculate the marks of the runs of given length, runs of other length will not be considered
+%calcu_runs1(+Values,+Length,-Point)
+%The Hand is expected as a list of number value of card points, 
+%and the Length is expected to be the length of runs 
+succ2([_],SuccNum,RunNum,TmpMark,Point):-SuccNum>=3->Point is TmpMark+SuccNum*RunNum
+    ;Point is TmpMark.
+succ2([Elt1-_,Elt2-PairNum2|L],SuccNum,RunNum,TmpMark,Point):-Elt2 is Elt1+1
+    ->RunNum1 is RunNum*PairNum2,SuccNum1 is SuccNum+1
+        ,succ2([Elt2-PairNum2|L],SuccNum1,RunNum1,TmpMark,Point)
+    ;SuccNum>=3->TmpMark1 is TmpMark+SuccNum*RunNum
+        ,succ2([Elt2-PairNum2|L],1,PairNum2,TmpMark1,Point)
+    ;succ2([Elt2-PairNum2|L],1,PairNum2,TmpMark,Point).
+
+%Calculate the marks of the flushes
+%calcu_flushes(+Hand,+Start,-Point)
+%The Hand is expected as a list of four cards and the Start is expected as one card  
+%And the Points will be 4(a hand of same suit) or 5(all cards of same suit) or 0(others).
+calcu_flushes(Hand,Start,Point):-[Start|Hand]=[(_,S),(_,S),(_,S),(_,S),(_,S)]
+    ->Point=5;
+    Hand=[(_,S),(_,S),(_,S),(_,S)]
+    ->Point=4
+    ;Point=0.
+
+%Calculate the marks of the nob
+%calcu_nob(+Hand,+Start,-Point)
+%The Hand is expected as a list of four cards and the Start is expected as one card  
+%And the Points will be 1(satisfy condition) or 0 (fail to satisfy).
+calcu_nob(Hand,(_,C),Point):-member((jack,C),Hand)->Point=1;Point=0.
+
+
+%===============Below are some tool predicates used above condition tests======= 
+
+
+%some predefined facts mapping points of cards to numbers for calculating runs
+%run_map(+Card,-Number).
+run_map((ace,_),1).
+run_map((jack,_),11).
+run_map((queen,_),12).
+run_map((king,_),13).
+run_map((N,_),N):-integer(N),1<N,N<11.
+
+%some predefined facts mapping number of card pairs to points
+%pairs(+PairNumber,-Points).
+pairs(1,0).
+pairs(2,2).
+pairs(3,6).
+pairs(4,12).
+
+%get the number values of the card points
+%number_map(+Hands,-Values)
+%Hands is a list containing all cards in hand(including Hand and Start), Values
+%is a sorted list containing corresponding number values of card points 
+number_map(Hands,Values):-maplist(run_map,Hands,RawValues),msort(RawValues,Values).
+
+%Map all numbers in List that greater than 10 to 10 and leave others unchanged
+%ceil_List(+List,-CeiledList)
+%The List is a list of input numbers while the CeiledList is that of mapped Numbers.
+ceil_list(List,CeiledList):-maplist(ceil_map,List,CeiledList).
+ceil_map(Number,CeiledNumber):-CeiledNumber is min(10,Number).
+
+%compress a sorted list into a list of element-occourence number
+%For example, [1,1,2,3,3] will be zipped into [1-2,2-1,3-2]
+%zipList(+List,-ZippedList)
+%The List is the sorted input list while the ZippedList is the compressed one  
+zipList(List,ZippedList):-zipList1(List,ZippedList,1).
+zipList1([Elt1],[Elt1-SameNum],SameNum).
+zipList1([Elt1,Elt2|List],[Elt1-Num|Zipped],SameNum):-Elt1=Elt2
+    ->SameNum1 is SameNum+1,zipList1([Elt2|List],[Elt1-Num|Zipped],SameNum1)
+    ;Num=SameNum,zipList1([Elt2|List],Zipped,1).
+%===================================================
+
+
+
+    
+
+
+
+%=============================================================================
+%Decide whether a list has N elements and is a run
+%succ(+List,+N).
+%Return true if and only if List has N elements and is arranged in a successive run.
+%succ(List,N):-length(List,N),succ1(List).
+%succ1([E1,E2|Es]):-E2 is E1+1,succ1([E2|Es]).
+%succ1([E1,E2]):-E2 is E1+1.
+
+%Taken from assignment1, generate a Sublist from List by deleting some elements in that List
+%sublist(-Sublist,+List).
+%The List is the original List while the Sublist is the result sublist.
+%sublist([],[]).
+%sublist(Xs,[_|Ys]):-sublist(Xs,Ys).
+%sublist([N|Xs],[N|Ys]):-sublist(Xs,Ys).
+
+%calcu_runs1(Values,Length,Point):-findall(Sublist,(sublist(Sublist,Values),succ(Sublist,Length)),Results)
+%    ,length(Results,N),Point is Length*N.
+
+
+%calcu_runs(Hand,Start,Point):-number_map([Start|Hand],Values),
+%    (
+%    calcu_runs1(Values,5,P),P>0->Point=P;
+%    calcu_runs1(Values,4,P),P>0->Point=P;
+%    calcu_runs1(Values,3,P),P>0->Point=P;
+%    Point=0
+%    ).
+
